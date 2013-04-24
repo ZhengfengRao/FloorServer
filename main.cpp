@@ -1,144 +1,157 @@
-#include <boost/unordered/unordered_map.hpp>
-
 #include "common.h"
-#include "TaskQueue.h"
-#include "WorkThread.h"
-#include "SocketManager.h"
+#include "Server.h"
+#include "test.h"
+#include "debug.h"
 
-bool SetNonBlocking(int sock_fd)
+void CheckConfigure()
 {
-    int opts;
-    opts = fcntl(sock_fd, F_GETFL);
-    if (opts >= 0)
+    try
     {
-        opts = opts | O_NONBLOCK;
-        if (fcntl(sock_fd, F_SETFL, opts) >= 0)
+        boost::property_tree::ptree _pt;
+        boost::property_tree::ini_parser::read_ini(LOG_CONFIG, _pt);
+
+        try
         {
-            return true;
+            std::string _strLevel = _pt.get<std::string>("loglevel");
+            LogLevel _level = LOG_LEVEL_NONE;
+            for (int i = 0; i<sizeof (g_strLogLevel) / sizeof (std::string); i++)
+            {
+                if (strcasecmp(_strLevel.c_str(), g_strLogLevel[i]) == 0)
+                {
+                    _level = (LogLevel) i;
+                    break;
+                }
+            }
+
+            if (_level != g_logLevel)
+            {
+                g_logLevel = _level;
+                LOG(LOG_LEVEL_NODE, "Log level set to:" << g_strLogLevel[_level]);
+            }
         }
-        else
+        catch (boost::property_tree::ptree_error _error)
         {
-            LOG_ERROR("fcntl(sock_fd, F_SETFL, opts) failed. opts = " << opts << ", fd = " << sock_fd);
+            //LOG(LOG_LEVEL_DEBUG, _error.what());
+        }
+
+        try
+        {
+            std::string _strLogRaw = _pt.get<std::string>("lograw");
+            if (strcasecmp(_strLogRaw.c_str(), "yes") == 0)
+            {
+                if (g_logRaw == false)
+                {
+                    LOG(LOG_LEVEL_NODE, "LogRaw set to: Yes");
+                    g_logRaw = true;
+                }
+            }
+            else if (strcasecmp(_strLogRaw.c_str(), "no") == 0)
+            {
+                if (g_logRaw == true)
+                {
+                    LOG(LOG_LEVEL_NODE, "LogRaw set to: No");
+                    g_logRaw = false;
+                }
+            }
+        }
+        catch (boost::property_tree::ptree_error _error)
+        {
+            //LOG(LOG_LEVEL_DEBUG, _error.what());
+        }
+
+        try
+        {
+            std::string _strLog2File = _pt.get<std::string>("log2file");
+            if (strcasecmp(_strLog2File.c_str(), "yes") == 0)
+            {
+                if (g_log2File == false)
+                {
+                    LOG(LOG_LEVEL_NODE, "Log2File set to: Yes");
+                    g_log2File = true;
+                    SET_LOG();
+                }
+            }
+            else if (strcasecmp(_strLog2File.c_str(), "no") == 0)
+            {
+                if (g_log2File == true)
+                {
+                    LOG(LOG_LEVEL_NODE, "Log2File set to: No");
+                    g_log2File = false;
+                    SET_LOG();
+                }
+            }
+        }
+        catch (boost::property_tree::ptree_error _error)
+        {
+            //LOG(LOG_LEVEL_DEBUG, _error.what());
         }
     }
-    else
+    catch (boost::property_tree::ini_parser_error _error)
     {
-        LOG_ERROR("fcntl(sock_fd, F_GETFL) returned:" << opts << ", fd = " << sock_fd);
+        //LOG(LOG_LEVEL_DEBUG, _error.what());
+    }
+
+}
+
+void CheckLog()
+{
+    if(g_log2File == true)
+    {
+        if(g_logFileDate != DATE)
+        {
+            REOPEN_LOG()
+        }
+    }
+}
+
+bool CheckExit()
+{
+    try
+    {
+        boost::property_tree::ptree _pt;
+        boost::property_tree::ini_parser::read_ini(GRACE_EXIT, _pt);
+
+        try
+        {
+            std::string _strExit = _pt.get<std::string>("exit");
+            if (strcasecmp(_strExit.c_str(), "now") == 0)
+            {
+                LOG(LOG_LEVEL_NODE, "********************* Detect Grace Exit! ****************************");
+                LOG(LOG_LEVEL_NODE, "");
+                LOG(LOG_LEVEL_NODE, "program will exit now.");
+                LOG(LOG_LEVEL_NODE, "");
+                LOG(LOG_LEVEL_NODE, "*********************************************************************");
+                return true;
+            }
+        }
+        catch (boost::property_tree::ptree_error _error)
+        {
+            //LOG(LOG_LEVEL_DEBUG, _error.what());
+        }
+    }
+    catch (boost::property_tree::ini_parser_error _error)
+    {
+        //LOG(LOG_LEVEL_DEBUG, _error.what());
     }
 
     return false;
 }
 
-int InitSocket(int server_port)
+void Verbose()
 {
-    int _fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (SetNonBlocking(_fd) == false)
-    {
-        exit(EXIT_FAILURE);
-    }
-
-    struct sockaddr_in server_addr;
-    bzero(&server_addr, sizeof (server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(server_port);
-    server_addr.sin_family = INADDR_ANY;
-    if (bind(_fd, (sockaddr*) & server_addr, sizeof (server_addr)) != 0)
-    {
-        LOG_FATAL("bind() failed. " << strerror(errno));
-        exit(EXIT_FAILURE);
-    }
-    if (listen(_fd, LISTENQ) != 0)
-    {
-        LOG_FATAL("listen() failed. " << strerror(errno));
-        exit(EXIT_FAILURE);
-    }
-
-    return _fd;
+    LOG(LOG_LEVEL_NODE, "*********************************************************************");
+    LOG(LOG_LEVEL_NODE, " Aimu Server.");
+    LOG(LOG_LEVEL_NODE, "Version: 0.99");
+    LOG(LOG_LEVEL_NODE, "Build: " << __DATE__ << ", " << __TIME__);
+    LOG(LOG_LEVEL_NODE, "Gcc: " << __VERSION__);
+    LOG(LOG_LEVEL_NODE, "Author: Zhengfeng Rao, gisrzf@gmail.com");
+    LOG(LOG_LEVEL_NODE, "");
+    LOG(LOG_LEVEL_NODE, "Copyright ©2013, All rights reserved.");
+    LOG(LOG_LEVEL_NODE, "*********************************************************************");
 }
 
-void StartEpoll(int listen_fd, TaskQueue* task_queue, SocketManager* socket_manager)
+void DoParams(int& server_port, int argc, char** argv)
 {
-    /* The size is not the maximum size of the backing store but just a hint to the kernel about how to dimension internal structures.
-     * (Nowadays, size is ignored. Since Linux 2.6.8, the size argument is unused:The kernel dynamically sizes the required data structures
-     * without needing this initial hint.)*/
-    int ep_fd = epoll_create(256);
-    struct epoll_event ev, events[MAX_EVENTS];
-    ev.data.fd = listen_fd;
-    ev.events = EPOLLIN | EPOLLET;
-    epoll_ctl(ep_fd, EPOLL_CTL_ADD, listen_fd, &ev);
-
-    int nfds = 0;
-    int conn_fd = -1;
-    int sock_fd = -1;
-    struct sockaddr_in client_addr;
-    socklen_t clilen = sizeof (client_addr);
-    memset(&client_addr, 0, sizeof (struct sockaddr_in));
-
-    for (;;)
-    {
-        // //TODO:remove closed socket handle.
-        // //the socket handle will be re-used for later sockets. maybe it's unnessary to remove it?????
-        // if()
-        // {
-        // epoll_ctl(ep_fd, EPOLL_CTL_DEL, fd, &ev) ;
-        // }
-
-        nfds = epoll_wait(ep_fd, events, MAX_EVENTS, -1);
-        for (int i = 0; i < nfds; i++)
-        {
-            if (events[i].data.fd == listen_fd)
-            {
-                conn_fd = accept(listen_fd, (sockaddr*) & client_addr, &clilen);
-                if (conn_fd < 0)
-                {
-                    LOG_ERROR("accept() returned fd:" << conn_fd << ". error msg:" << strerror(errno));
-                    continue;
-                }
-                SetNonBlocking(conn_fd);
-                socket_manager->UpdateActiveTime(conn_fd);
-
-                //The string is returned in a statically allocated buffer, which subsequent calls will overwrite.
-                //which means:we don't need to free the string returnd by inet_ntoa(), but it's non-re-entry,be careful in multithreads.
-                char *str = inet_ntoa(client_addr.sin_addr);
-                LOG_INFO("connect from:" << str);
-
-                ev.data.fd = conn_fd;
-                ev.events = EPOLLIN | EPOLLET;
-                epoll_ctl(ep_fd, EPOLL_CTL_ADD, conn_fd, &ev); //add the new connection to epoll
-            }
-            else if (events[i].events & EPOLLIN)
-            {
-                if ((sock_fd = events[i].data.fd) < 0)
-                {
-                    LOG_INFO("Invalid socket fd:" << sock_fd);
-                    continue;
-                }
-
-                LOG_INFO("EPOLLIN. socket fd:" << sock_fd << ", events:" << events[i].events);
-                task_queue->Push(sock_fd);
-                socket_manager->UpdateActiveTime(sock_fd);
-            }
-        }
-    }
-}
-
-void Init()
-{
-
-}
-
-void Pause()
-{
-    pthread_cond_t _cond = PTHREAD_COND_INITIALIZER;
-    pthread_mutex_t _mutex = PTHREAD_MUTEX_INITIALIZER;
-    pthread_mutex_lock(&_mutex);
-    pthread_cond_wait(&_cond, &_mutex);
-    pthread_mutex_unlock(&_mutex);
-}
-
-int main(int argc, char** argv)
-{
-    int server_port = SERVER_PORT;
     if (argc >= 2)
     {
         int port = atoi(argv[1]);
@@ -148,58 +161,83 @@ int main(int argc, char** argv)
         }
         else
         {
-            LOG_ERROR("Invalid port:" << argv[1]);
+            LOG(LOG_LEVEL_ERROR, "Invalid port:" << argv[1]);
         }
     }
-    LOG_INFO("Use port: " << server_port);
-
-    //
-    Init();
-
-    //start workthreads
-    TaskQueue _taskQueue;
-    ThreadPool _pool(WORK_THREADS, &_taskQueue);
-    SocketManager _manager;
-
-    int listen_fd = InitSocket(server_port);
-    boost::thread _epollThread(StartEpoll, listen_fd, &_taskQueue, &_manager);
-    boost::thread _checkThread(&SocketManager::Run, &_manager);
-    //boost::thread _ctrlThread();
-
-    //use signal to pause(block the thread) forever, not sleep loop.
-    Pause();
-    /*
-    while(1)
-    {
-    sleep(10);
-
-   // ***************************** NOTICE ********************************
-   // sleep the main thread may cause crash(when epoll got soemthing from the socket).
-   // the crash is happened in main thread, all other threads works quite well.
-   // i got no backtrace info in gdb:
-   // Program received signal SIGSEGV, Segmentation fault.
-   // 0x0000000000000000 in ?? ()
-   // #0 0x0000000000000000 in ?? ()
-   // #1 0x0000000000000000 in ?? ()
-   // (gdb) info threads
-   // 13 Thread 0x7fffcbfff700 (LWP 28064) 0x00000035950ab91d in nanosleep ()
-   // from /lib64/libc.so.6
-   // 12 Thread 0x7fffecdfa700 (LWP 28063) 0x00000035950e7c73 in epoll_wait ()
-   // from /lib64/libc.so.6
-   // 11 Thread 0x7fffed7fb700 (LWP 28062) 0x000000359540b43c in pthread_cond_wait@@GLIBC_2.3.2 () from /lib64/libpthread.so.0
-   // 10 Thread 0x7fffee1fc700 (LWP 28061) 0x000000359540b43c in pthread_cond_wait@@GLIBC_2.3.2 () from /lib64/libpthread.so.0
-   // 9 Thread 0x7fffeebfd700 (LWP 28060) 0x000000359540b43c in pthread_cond_wait@@GLIBC_2.3.2 () from /lib64/libpthread.so.0
-   // 8 Thread 0x7fffef5fe700 (LWP 28059) 0x000000359540b43c in pthread_cond_wait@@GLIBC_2.3.2 () from /lib64/libpthread.so.0
-   // 7 Thread 0x7ffff53ba700 (LWP 28058) 0x000000359540b43c in pthread_cond_wait@@GLIBC_2.3.2 () from /lib64/libpthread.so.0
-   // 6 Thread 0x7ffff5dbb700 (LWP 28057) 0x000000359540b43c in pthread_cond_wait@@GLIBC_2.3.2 () from /lib64/libpthread.so.0
-   // 5 Thread 0x7fffeffff700 (LWP 28056) 0x000000359540b43c in pthread_cond_wait@@GLIBC_2.3.2 () from /lib64/libpthread.so.0
-   // 4 Thread 0x7ffff67bc700 (LWP 28055) 0x000000359540b43c in pthread_cond_wait@@GLIBC_2.3.2 () from /lib64/libpthread.so.0
-   // 3 Thread 0x7ffff71bd700 (LWP 28054) 0x000000359540b43c in pthread_cond_wait@@GLIBC_2.3.2 () from /lib64/libpthread.so.0
-   // 2 Thread 0x7ffff7bbe700 (LWP 28053) 0x000000359540b43c in pthread_cond_wait@@GLIBC_2.3.2 () from /lib64/libpthread.so.0
-   // * 1 Thread 0x7ffff7bc0720 (LWP 27892) 0x0000000000000000 in ?? ()
-   //
-   // i guess this is maybe the main thread disturbe epoll's working?.......
-   // need to be resolved.
-    }
-     */
+    LOG(LOG_LEVEL_INFO, "Use port: " << server_port);
 }
+
+int mainFun(int argc, char** argv)
+{
+    Debug_Printf_FrameInfos();
+    LOG(LOG_LEVEL_NODE, "Server starting...");
+    Verbose();
+
+    int server_port = SERVER_PORT;
+    DoParams(server_port, argc, argv);
+
+    Server* _pServer = Server::NewServer(server_port);
+    if (_pServer != NULL)
+    {
+        _pServer->Run();
+    }
+
+    while (1)
+    {
+        sleep(3);
+        CheckConfigure();
+        CheckLog();
+        if (CheckExit() == true)//need to exit.
+        {
+            Server::DestoryServer(_pServer);
+
+            LOG(LOG_LEVEL_NODE, "All threads exited!");
+            exit(EXIT_SUCCESS);
+        }
+    }
+}
+
+
+static int g_nPID = 0;
+
+int main(int argc, char** argv)
+{
+    SET_LOG()
+    LOG(LOG_LEVEL_NODE, "[Demaon] App start!");
+    if ((g_nPID = fork()) == 0)//executed by child process
+    {
+        LOG(LOG_LEVEL_NODE, "Child process forked!");
+        mainFun(argc, argv);
+    }
+    else//executed by parent process
+    {
+        int nStatus = 0;
+        while (1)
+        {
+            int n = waitpid(g_nPID, &nStatus, 0); //will block
+            LOG(LOG_LEVEL_NODE, "[Demaon] Child process exited!");
+            if (n <= 0)
+            {
+                //continue;
+            }
+            else
+            {
+                if (pre_exit(g_nPID, nStatus) == true)
+                {
+                    LOG(LOG_LEVEL_NODE, "[Demaon] Need restart.");
+                    sleep(3);
+                    if ((g_nPID = fork()) == 0)
+                    {
+                        LOG(LOG_LEVEL_NODE, "[Demaon] Program restarting...");
+                        mainFun(argc, argv);
+                    }
+                }
+                else
+                {
+                    exit(EXIT_SUCCESS);
+                }
+            }
+        }
+    }
+}
+
