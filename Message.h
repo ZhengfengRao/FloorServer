@@ -15,4 +15,4 @@ enum MSG_TYPE
     MSG_DEL
 };
 
-#endif MESSAGE_H
+#endif /*MESSAGE_H*/
